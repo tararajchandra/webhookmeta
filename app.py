@@ -33,6 +33,15 @@ class RepliedContact(db.Model):
     sender_name = db.Column(db.String(100))
     last_replied_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+class FailedMessage(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    message_id = db.Column(db.String(255), unique=True, nullable=False)
+    phone_number = db.Column(db.String(50))
+    status = db.Column(db.String(50))
+    error_title = db.Column(db.String(255))
+    error_details = db.Column(db.Text)
+    failed_at = db.Column(db.DateTime, default=datetime.utcnow)
+
 with app.app_context():
     db.create_all()
 
@@ -58,6 +67,17 @@ def get_messages(phone_number):
         "received_at": m.received_at.strftime("%Y-%m-%d %H:%M:%S"),
         "is_from_us": m.is_from_us
     } for m in messages])
+
+@app.route('/api/failed_messages')
+def get_failed_messages():
+    failed = FailedMessage.query.order_by(FailedMessage.failed_at.desc()).all()
+    return jsonify([{
+        "phone_number": f.phone_number,
+        "status": f.status,
+        "error_title": f.error_title,
+        "error_details": f.error_details,
+        "failed_at": f.failed_at.strftime("%Y-%m-%d %H:%M:%S")
+    } for f in failed])
 
 @app.route('/api/send_message', methods=['POST'])
 def send_reply():
@@ -172,6 +192,34 @@ def receive_message():
                                     db.session.add(new_contact)
                                 
                                 db.session.commit()
+                    
+                    if "statuses" in value:
+                        for status in value["statuses"]:
+                            msg_status = status.get("status")
+                            recipient_id = status.get("recipient_id")
+                            message_id = status.get("id")
+                            
+                            if msg_status in ["failed", "undelivered"]:
+                                errors = status.get("errors", [])
+                                error_title = "Unknown Error"
+                                error_details = ""
+                                if errors:
+                                    error_title = errors[0].get("title", "Unknown Error")
+                                    error_details = errors[0].get("error_data", {}).get("details", "")
+                                
+                                # Save failed message
+                                existing = FailedMessage.query.filter_by(message_id=message_id).first()
+                                if not existing:
+                                    failed_msg = FailedMessage(
+                                        message_id=message_id,
+                                        phone_number=recipient_id,
+                                        status=msg_status,
+                                        error_title=error_title,
+                                        error_details=error_details
+                                    )
+                                    db.session.add(failed_msg)
+                                    db.session.commit()
+
             return jsonify({"status": "success"}), 200
         return "Not a WhatsApp API event", 404
     except Exception as e:
