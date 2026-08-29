@@ -70,14 +70,17 @@ def get_messages(phone_number):
 
 @app.route('/api/failed_messages')
 def get_failed_messages():
-    failed = FailedMessage.query.order_by(FailedMessage.failed_at.desc()).all()
-    return jsonify([{
-        "phone_number": f.phone_number,
-        "status": f.status,
-        "error_title": f.error_title,
-        "error_details": f.error_details,
-        "failed_at": f.failed_at.strftime("%Y-%m-%d %H:%M:%S")
-    } for f in failed])
+    try:
+        failed = FailedMessage.query.order_by(FailedMessage.failed_at.desc()).all()
+        return jsonify([{
+            "phone_number": f.phone_number,
+            "status": f.status,
+            "error_title": f.error_title,
+            "error_details": f.error_details,
+            "failed_at": f.failed_at.strftime("%Y-%m-%d %H:%M:%S") if f.failed_at else "Unknown"
+        } for f in failed])
+    except Exception as e:
+        return jsonify({"error": str(e), "trace": "Error in get_failed_messages"}), 500
 
 @app.route('/api/send_message', methods=['POST'])
 def send_reply():
